@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import "./App.css";
 
 function App() {
@@ -12,13 +12,13 @@ function App() {
 
   const fileInputRef = useRef(null);
 
-  // ✅ CORRECT BACKEND URL (from Vercel env)
+  // ✅ Backend URL from env
   const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
-  console.log("ENV URL:", BACKEND_URL); // debug
+  console.log("ENV URL:", BACKEND_URL);
 
-  // ✅ FETCH IMAGES
-  const fetchImages = async () => {
+  // ✅ Fetch Images (fixed with useCallback)
+  const fetchImages = useCallback(async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/images`);
       const data = await res.json();
@@ -28,9 +28,9 @@ function App() {
     } catch (err) {
       console.error("Fetch error:", err);
     }
-  };
+  }, [BACKEND_URL]);
 
-  // ✅ UPLOAD IMAGE
+  // ✅ Upload Image
   const handleUpload = async () => {
     if (!file) return alert("Please select a file");
 
@@ -56,7 +56,7 @@ function App() {
     }
   };
 
-  // ✅ DELETE IMAGE
+  // ✅ Delete Image
   const handleDelete = async (key) => {
     try {
       await fetch(`${BACKEND_URL}/delete/${encodeURIComponent(key)}`, {
@@ -69,7 +69,7 @@ function App() {
     }
   };
 
-  // ✅ SEARCH
+  // ✅ Search
   useEffect(() => {
     const delay = setTimeout(async () => {
       try {
@@ -89,14 +89,14 @@ function App() {
     }, 300);
 
     return () => clearTimeout(delay);
-  }, [search]);
+  }, [search, BACKEND_URL, fetchImages]);
 
-  // ✅ INITIAL LOAD
+  // ✅ Initial Load
   useEffect(() => {
     fetchImages();
-  }, []);
+  }, [fetchImages]);
 
-  // ✅ INFINITE SCROLL
+  // ✅ Infinite Scroll
   useEffect(() => {
     const handleScroll = () => {
       if (
@@ -112,6 +112,7 @@ function App() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, [visibleCount, gallery]);
 
+  // ✅ Auto load if page small
   useEffect(() => {
     if (
       document.documentElement.scrollHeight <= window.innerHeight &&
