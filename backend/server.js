@@ -6,7 +6,7 @@ const cors = require("cors");
 const AWS = require("aws-sdk");
 const mongoose = require("mongoose");
 
-
+// ===== AWS CONFIG =====
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY,
   secretAccessKey: process.env.AWS_SECRET_KEY,
@@ -16,50 +16,45 @@ AWS.config.update({
 const s3 = new AWS.S3();
 const rekognition = new AWS.Rekognition();
 
-
+// ===== DB CONNECT =====
 mongoose
-  .connect("mongodb://127.0.0.1:27017/ai-photo-album")
-  .then(() => console.log("MongoDB Connected "))
-  .catch((err) => console.log(err));
+  .connect(process.env.MONGO_URI)
+  .then(() => console.log("MongoDB Connected ✅"))
+  .catch((err) => console.log("Mongo Error:", err));
 
-
+// ===== MODEL =====
 const ImageSchema = new mongoose.Schema(
   {
     key: { type: String, required: true },
-    labels: [{ name: String, confidence: String }],
+    labels: [
+      {
+        name: String,
+        confidence: String,
+      },
+    ],
   },
   { timestamps: true },
 );
 
 const ImageModel = mongoose.model("Image", ImageSchema);
 
-
+// ===== APP =====
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
+// ===== MULTER =====
 const upload = multer({
   storage: multer.memoryStorage(),
-
   fileFilter: (req, file, cb) => {
-    if (
-      file.mimetype === "image/jpeg" ||
-      file.mimetype === "image/jpg" ||
-      file.mimetype === "image/png"
-    ) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only JPG and PNG images are allowed "), false);
-    }
+    const allowed = ["image/jpeg", "image/jpg", "image/png"];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error("Only JPG/PNG allowed"), false);
   },
-
-  limits: {
-    fileSize: 10 * 1024 * 1024,
-  },
+  limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-
+// ===== HELPERS =====
 async function detectLabels(bucket, key) {
   try {
     const res = await rekognition
@@ -70,10 +65,10 @@ async function detectLabels(bucket, key) {
       })
       .promise();
 
-    return res.Labels;
+    return res.Labels || [];
   } catch (err) {
     console.error("Rekognition error:", err.message);
-    return []; 
+    return [];
   }
 }
 
@@ -85,31 +80,21 @@ function getSignedUrl(bucket, key) {
   });
 }
 
+// ===== ROUTES =====
+
+// 🚀 UPLOAD
 app.post("/upload", upload.single("image"), async (req, res) => {
   try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
     const file = req.file;
+    const fileName = `${Date.now()}-${file.originalname}`;
+    const bucket = process.env.S3_BUCKET_NAME;
 
-    if (!file) {
-      return res.status(400).json({ error: "No file uploaded" });
-    }
-
- 
-    if (
-      file.mimetype !== "image/jpeg" &&
-      file.mimetype !== "image/jpg" &&
-      file.mimetype !== "image/png"
-    ) {
-      return res.status(400).json({
-        error: "Only JPG and PNG images are allowed ",
-      });
-    }
-
-    const fileName = Date.now() + "-" + file.originalname;
-
-
+    // Upload to S3
     await s3
       .upload({
-        Bucket: "my-ai-photo-album-12345",
+        Bucket: bucket,
         Key: fileName,
         Body: file.buffer,
         ContentType: file.mimetype,
@@ -118,38 +103,42 @@ app.post("/upload", upload.single("image"), async (req, res) => {
 
     console.log("Uploaded:", fileName);
 
-
-    const labels = await detectLabels("my-ai-photo-album-12345", fileName);
+    // Rekognition
+    const labels = await detectLabels(bucket, fileName);
 
     const formatted = labels.map((l) => ({
       name: l.Name,
       confidence: l.Confidence.toFixed(2),
     }));
 
+    // Save DB
     await ImageModel.create({
       key: fileName,
       labels: formatted,
     });
 
     res.json({
+      success: true,
       key: fileName,
-      imageUrl: getSignedUrl("my-ai-photo-album-12345", fileName),
+      imageUrl: getSignedUrl(bucket, fileName),
       labels: formatted,
     });
   } catch (err) {
     console.error("UPLOAD ERROR:", err);
-    res.status(500).json({ error: "Upload failed" });
+    res.status(500).json({ error: err.message || "Upload failed" });
   }
 });
 
-
+// 📌 GET ALL
 app.get("/images", async (req, res) => {
   try {
+    const bucket = process.env.S3_BUCKET_NAME;
+
     const images = await ImageModel.find().sort({ createdAt: -1 });
 
     const result = images.map((img) => ({
       key: img.key,
-      imageUrl: getSignedUrl("my-ai-photo-album-12345", img.key),
+      imageUrl: getSignedUrl(bucket, img.key),
       labels: img.labels,
     }));
 
@@ -160,11 +149,14 @@ app.get("/images", async (req, res) => {
   }
 });
 
+// 🔍 SEARCH
 app.get("/search", async (req, res) => {
-  const q = req.query.q;
-  if (!q) return res.json([]);
-
   try {
+    const bucket = process.env.S3_BUCKET_NAME;
+    const q = req.query.q;
+
+    if (!q) return res.json([]);
+
     const images = await ImageModel.find({
       "labels.name": { $regex: q, $options: "i" },
     });
@@ -172,7 +164,7 @@ app.get("/search", async (req, res) => {
     res.json(
       images.map((img) => ({
         key: img.key,
-        imageUrl: getSignedUrl("my-ai-photo-album-12345", img.key),
+        imageUrl: getSignedUrl(bucket, img.key),
         labels: img.labels,
       })),
     );
@@ -182,26 +174,29 @@ app.get("/search", async (req, res) => {
   }
 });
 
-
+// ❌ DELETE
 app.delete("/delete/:key", async (req, res) => {
   try {
+    const bucket = process.env.S3_BUCKET_NAME;
     const key = decodeURIComponent(req.params.key);
 
     await s3
       .deleteObject({
-        Bucket: "my-ai-photo-album-12345",
+        Bucket: bucket,
         Key: key,
       })
       .promise();
 
     await ImageModel.deleteOne({ key });
 
-    res.json({ message: "Deleted successfully ✅" });
+    res.json({ success: true, message: "Deleted ✅" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Delete failed" });
   }
 });
 
+// ===== SERVER =====
+const PORT = process.env.PORT || 5000;
 
-app.listen(5000, () => console.log("Server running 🚀"));
+app.listen(PORT, () => console.log(`Server running on ${PORT} 🚀`));
