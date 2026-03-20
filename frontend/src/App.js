@@ -11,8 +11,13 @@ function App() {
   const [visibleCount, setVisibleCount] = useState(LOAD_COUNT);
 
   const fileInputRef = useRef(null);
-  const BACKEND_URL = "http://localhost:5000";
 
+  // ✅ CORRECT BACKEND URL (from Vercel env)
+  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+
+  console.log("ENV URL:", BACKEND_URL); // debug
+
+  // ✅ FETCH IMAGES
   const fetchImages = async () => {
     try {
       const res = await fetch(`${BACKEND_URL}/images`);
@@ -25,6 +30,7 @@ function App() {
     }
   };
 
+  // ✅ UPLOAD IMAGE
   const handleUpload = async () => {
     if (!file) return alert("Please select a file");
 
@@ -40,9 +46,7 @@ function App() {
       });
 
       setFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      if (fileInputRef.current) fileInputRef.current.value = "";
 
       fetchImages();
     } catch (err) {
@@ -52,9 +56,8 @@ function App() {
     }
   };
 
+  // ✅ DELETE IMAGE
   const handleDelete = async (key) => {
-    if (!key) return;
-
     try {
       await fetch(`${BACKEND_URL}/delete/${encodeURIComponent(key)}`, {
         method: "DELETE",
@@ -66,6 +69,7 @@ function App() {
     }
   };
 
+  // ✅ SEARCH
   useEffect(() => {
     const delay = setTimeout(async () => {
       try {
@@ -87,10 +91,12 @@ function App() {
     return () => clearTimeout(delay);
   }, [search]);
 
+  // ✅ INITIAL LOAD
   useEffect(() => {
     fetchImages();
   }, []);
 
+  // ✅ INFINITE SCROLL
   useEffect(() => {
     const handleScroll = () => {
       if (

@@ -6,6 +6,7 @@ const cors = require("cors");
 const AWS = require("aws-sdk");
 const mongoose = require("mongoose");
 
+// ===== AWS CONFIG =====
 AWS.config.update({
   accessKeyId: process.env.AWS_ACCESS_KEY,
   secretAccessKey: process.env.AWS_SECRET_KEY,
@@ -15,11 +16,13 @@ AWS.config.update({
 const s3 = new AWS.S3();
 const rekognition = new AWS.Rekognition();
 
+// ===== DB CONNECT =====
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected ✅"))
   .catch((err) => console.log("Mongo Error:", err));
 
+// ===== MODEL =====
 const ImageSchema = new mongoose.Schema(
   {
     key: { type: String, required: true },
@@ -35,17 +38,12 @@ const ImageSchema = new mongoose.Schema(
 
 const ImageModel = mongoose.model("Image", ImageSchema);
 
+// ===== APP =====
 const app = express();
-const cors = require("cors");
-
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "DELETE"],
-  }),
-);
+app.use(cors());
 app.use(express.json());
 
+// ===== MULTER =====
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
@@ -56,6 +54,7 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
+// ===== HELPERS =====
 async function detectLabels(bucket, key) {
   try {
     const res = await rekognition
@@ -81,6 +80,9 @@ function getSignedUrl(bucket, key) {
   });
 }
 
+// ===== ROUTES =====
+
+// 🚀 UPLOAD
 app.post("/upload", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -89,6 +91,7 @@ app.post("/upload", upload.single("image"), async (req, res) => {
     const fileName = `${Date.now()}-${file.originalname}`;
     const bucket = process.env.S3_BUCKET_NAME;
 
+    // Upload to S3
     await s3
       .upload({
         Bucket: bucket,
@@ -100,6 +103,7 @@ app.post("/upload", upload.single("image"), async (req, res) => {
 
     console.log("Uploaded:", fileName);
 
+    // Rekognition
     const labels = await detectLabels(bucket, fileName);
 
     const formatted = labels.map((l) => ({
@@ -107,6 +111,7 @@ app.post("/upload", upload.single("image"), async (req, res) => {
       confidence: l.Confidence.toFixed(2),
     }));
 
+    // Save DB
     await ImageModel.create({
       key: fileName,
       labels: formatted,
@@ -124,6 +129,7 @@ app.post("/upload", upload.single("image"), async (req, res) => {
   }
 });
 
+// 📌 GET ALL
 app.get("/images", async (req, res) => {
   try {
     const bucket = process.env.S3_BUCKET_NAME;
@@ -143,6 +149,7 @@ app.get("/images", async (req, res) => {
   }
 });
 
+// 🔍 SEARCH
 app.get("/search", async (req, res) => {
   try {
     const bucket = process.env.S3_BUCKET_NAME;
@@ -167,6 +174,7 @@ app.get("/search", async (req, res) => {
   }
 });
 
+// ❌ DELETE
 app.delete("/delete/:key", async (req, res) => {
   try {
     const bucket = process.env.S3_BUCKET_NAME;
@@ -188,8 +196,7 @@ app.delete("/delete/:key", async (req, res) => {
   }
 });
 
+// ===== SERVER =====
 const PORT = process.env.PORT || 5000;
 
-app.listen(5000, "0.0.0.0", () => {
-  console.log("Server running on 5000 🚀");
-});
+app.listen(PORT, () => console.log(`Server running on ${PORT} 🚀`));
