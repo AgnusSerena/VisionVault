@@ -12,15 +12,10 @@ function App() {
 
   const fileInputRef = useRef(null);
 
-  // ✅ Backend URL from env
-  const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-
-  console.log("ENV URL:", BACKEND_URL);
-
-  // ✅ Fetch Images (fixed with useCallback)
+  // ✅ Fetch Images
   const fetchImages = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/images`);
+      const res = await fetch(`/api/images`);
       const data = await res.json();
 
       setGallery(data);
@@ -28,7 +23,7 @@ function App() {
     } catch (err) {
       console.error("Fetch error:", err);
     }
-  }, [BACKEND_URL]);
+  }, []);
 
   // ✅ Upload Image
   const handleUpload = async () => {
@@ -40,7 +35,7 @@ function App() {
       const formData = new FormData();
       formData.append("image", file);
 
-      await fetch(`${BACKEND_URL}/upload`, {
+      await fetch(`/api/upload`, {
         method: "POST",
         body: formData,
       });
@@ -59,7 +54,7 @@ function App() {
   // ✅ Delete Image
   const handleDelete = async (key) => {
     try {
-      await fetch(`${BACKEND_URL}/delete/${encodeURIComponent(key)}`, {
+      await fetch(`/api/delete/${encodeURIComponent(key)}`, {
         method: "DELETE",
       });
 
@@ -78,7 +73,7 @@ function App() {
           return;
         }
 
-        const res = await fetch(`${BACKEND_URL}/search?q=${search}`);
+        const res = await fetch(`/api/search?q=${search}`);
         const data = await res.json();
 
         setGallery(data);
@@ -89,7 +84,7 @@ function App() {
     }, 300);
 
     return () => clearTimeout(delay);
-  }, [search, BACKEND_URL, fetchImages]);
+  }, [search, fetchImages]);
 
   // ✅ Initial Load
   useEffect(() => {
